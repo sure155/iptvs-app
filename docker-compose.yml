@@ -1,15 +1,13 @@
 version: '3.8'
 services:
   iptv-proxy:
-    build: .
+    image: sure155/iptvs-app:latest
     container_name: iptv-proxy
     restart: unless-stopped
     ports:
       - "${PROXY_PORT:-8830}:8830"
     env_file:
       - .env
-    volumes:
-      - ./config.json:/app/config.json:ro
     networks:
       - iptv_net
 

@@ -50,8 +50,8 @@ cd iptvs-app
 cp .env.example .env
 # Edit .env with your EXTERNAL_BASE_URL / 编辑 .env 填入你的 EXTERNAL_BASE_URL
 
-# 2. Build and run / 构建并运行
-docker compose up -d --build
+# 2. Run / 运行
+docker compose up -d
 
 # 3. Verify / 验证
 curl http://localhost:8830/cache/stats
