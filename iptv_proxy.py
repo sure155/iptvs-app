@@ -151,22 +151,32 @@ def rewrite_m3u8(content, base_url):
         
         # This is a media URL — rewrite it
         if stripped.startswith('http://') or stripped.startswith('https://'):
-            parsed = urllib.parse.urlparse(stripped)
-            new_path = urllib.parse.quote(parsed.path, safe='/=:&?')
-            if parsed.query:
-                new_path += '?' + parsed.query
-            rewritten_line = f"{EXTERNAL_BASE_URL}/stream{new_path}"
+            # Encode the FULL upstream URL for the proxy to reconstruct
+            full_url = urllib.parse.quote(stripped, safe='')
+            base = EXTERNAL_BASE_URL.rstrip('/')
+            if base.endswith('/stream'):
+                rewritten_line = f"{base}/{full_url}"
+            else:
+                rewritten_line = f"{base}/stream/{full_url}"
             rewritten.append(rewritten_line)
         elif stripped.startswith('/'):
-            rewritten.append(f"{EXTERNAL_BASE_URL}/stream{stripped}")
+            # Absolute path - join with base URL and encode full URL
+            full_url = urllib.parse.urljoin(base_url, stripped)
+            full_url_enc = urllib.parse.quote(full_url, safe='')
+            base = EXTERNAL_BASE_URL.rstrip('/')
+            if base.endswith('/stream'):
+                rewritten.append(f"{base}/{full_url_enc}")
+            else:
+                rewritten.append(f"{base}/stream/{full_url_enc}")
         else:
             # Relative URL
             base = urllib.parse.urljoin(base_url, stripped)
-            parsed = urllib.parse.urlparse(base)
-            new_path = urllib.parse.quote(parsed.path, safe='/=:&?')
-            if parsed.query:
-                new_path += '?' + parsed.query
-            rewritten.append(f"{EXTERNAL_BASE_URL}/stream{new_path}")
+            full_url_enc = urllib.parse.quote(base, safe='')
+            base = EXTERNAL_BASE_URL.rstrip('/')
+            if base.endswith('/stream'):
+                rewritten.append(f"{base}/{full_url_enc}")
+            else:
+                rewritten.append(f"{base}/stream/{full_url_enc}")
     
     return '\n'.join(rewritten)
 
@@ -209,13 +219,21 @@ class IPTVProxyHandler(http.server.BaseHTTPRequestHandler):
     def _handle_stream(self, upstream_url, head_only=False):
         """Proxy a stream request to the upstream source."""
         try:
-            # Check redirect cache first
-            cached_redirect = redirect_cache.get(upstream_url)
-            if cached_redirect and cached_redirect[3] != 'MISS':
-                actual_url = cached_redirect[0]
-                logger.info(f"Using cached redirect for {upstream_url[:60]}...")
+            # Decode the upstream URL (it may be a full encoded URL or a path)
+            # If it contains a scheme (http/https), it's a full encoded URL
+            import urllib.parse
+            decoded_url = urllib.parse.unquote(upstream_url)
+            if decoded_url.startswith('http://') or decoded_url.startswith('https://'):
+                # This is a full encoded upstream URL
+                actual_url = decoded_url
             else:
-                actual_url = upstream_url
+                # This is a path - try to reconstruct from redirect cache
+                cached_redirect = redirect_cache.get(upstream_url)
+                if cached_redirect and cached_redirect[3] != 'MISS':
+                    actual_url = cached_redirect[0]
+                    logger.info(f"Using cached redirect for {upstream_url[:60]}...")
+                else:
+                    actual_url = upstream_url
             
             # Fetch the stream
             resp = fetch_url(actual_url, timeout=TS_TIMEOUT if not head_only else M3U8_TIMEOUT)
@@ -223,6 +241,32 @@ class IPTVProxyHandler(http.server.BaseHTTPRequestHandler):
             content_type = resp.headers.get('Content-Type', 'application/octet-stream')
             content_length = resp.headers.get('Content-Length')
             
+            # Check if this is an m3u8 playlist that needs rewriting
+            is_m3u8 = 'mpegurl' in content_type or upstream_url.endswith('.m3u8') or upstream_url.endswith('.m3u')
+            
+            if is_m3u8 and not head_only:
+                # Read full playlist content for rewriting
+                body = resp.read()
+                resp.close()
+                
+                # Rewrite URLs in the playlist
+                rewritten = rewrite_m3u8(body.decode('utf-8', errors='ignore'), actual_url)
+                body_bytes = rewritten.encode('utf-8')
+                
+                # Send response with rewritten content
+                self.send_response(200)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Connection', 'keep-alive')
+                self.send_header('Content-Length', str(len(body_bytes)))
+                self.end_headers()
+                self.wfile.write(body_bytes)
+                self.wfile.flush()
+                
+                # Cache the rewritten playlist
+                m3u8_cache.put(upstream_url, body_bytes, content_type)
+                return
+            
+            # For non-m3u8 (TS segments, etc.) - stream directly
             # Set response headers
             self.send_response(200)
             self.send_header('Content-Type', content_type)
