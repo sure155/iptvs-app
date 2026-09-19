@@ -77,3 +77,29 @@ The proxy will automatically rewrite any relative URLs found in `.m3u8` playlist
 ## License
 
 MIT
+
+
+## Well-Known Public Sources (Examples)
+
+These are popular public IPTV sources you can use with this proxy:
+
+| Source | URL | Description |
+|--------|-----|-------------|
+| **iptvs.pes.im** | `https://iptvs.pes.im` | IPTV channel list aggregation |
+| **EPG (zsdc.eu.org)** | `https://epg.zsdc.eu.org/t.xml` | Electronic Program Guide XML |
+| **Logo Base (Jarrey)** | `https://ghfast.top/https://raw.githubusercontent.com/Jarrey/iptv_logo/main/tv/` | Channel logo CDN via ghfast.top proxy |
+
+### Example M3U Entry with Proxy
+
+```m3u
+#EXTINF:-1 tvg-id="CCTV1" tvg-logo="https://ghfast.top/https://raw.githubusercontent.com/Jarrey/iptv_logo/main/tv/CCTV1.png",CCTV-1 综合
+http://your-proxy-host:8830/stream/https://example-cdn.com/live/cctv1.m3u8
+```
+
+### Using EPG with TVBox/OTT Player
+
+In your player config, set:
+- **EPG URL**: `https://epg.zsdc.eu.org/t.xml`
+- **Logo Base**: `https://ghfast.top/https://raw.githubusercontent.com/Jarrey/iptv_logo/main/tv/`
+
+These are public community-maintained sources — no authentication required.

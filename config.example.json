@@ -1,0 +1,11 @@
+{
+  "iptv_sources": [
+    "https://iptvs.pes.im"
+  ],
+  "epg_url": "https://epg.zsdc.eu.org/t.xml",
+  "logo_base_url": "https://ghfast.top/https://raw.githubusercontent.com/Jarrey/iptv_logo/main/tv/",
+  "proxy": {
+    "port": 8830,
+    "external_base_url": "https://your-domain.com/stream"
+  }
+}
