@@ -175,4 +175,13 @@ iptvs-app/
 
 ## License / 许可证
 
+
+## Credits / 致谢
+
+- Original concept and IPTV selection maintenance: **快点Hurry** (B站 UP 主)
+- This project is a repackaged and integrated version of the original work.
+- The IPTV filtering/selection logic (`iptv_scanner.py`, `iptv_merge.py`, etc.) remains maintained by the original UP 主.
+
+If you enjoy this project, please consider supporting the original creator on Bilibili.
+
 MIT
