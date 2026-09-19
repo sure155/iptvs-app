@@ -1,0 +1,23 @@
+# Config & secrets
+config.json
+*.m3u
+*.m3u8
+*.ts
+*.dat
+*.log
+data/
+logs/
+*.bak
+*.bak.*
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
