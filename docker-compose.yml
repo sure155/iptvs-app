@@ -8,6 +8,8 @@ services:
       - "${PROXY_PORT:-8830}:8830"
     env_file:
       - .env
+    volumes:
+      - ./.env:/app/.env:rw
     networks:
       - iptv_net
 

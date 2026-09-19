@@ -29,6 +29,19 @@ import threading
 import time
 from collections import OrderedDict
 
+# Simple .env loader (no external dependency)
+def load_env():
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, val = line.split('=', 1)
+                    os.environ.setdefault(key.strip(), val.strip())
+
+load_env()
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger('iptv-proxy')
 
@@ -184,6 +197,119 @@ def rewrite_m3u8(content, base_url):
 # Stream Handler
 # ============================================================
 
+
+# ============================================================
+# Simple Web UI for configuration
+# ============================================================
+
+UI_HTML = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPTV Proxy 控制面板</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#f5f5f5; margin:0; padding:2rem; }
+        .container { max-width:700px; margin:0 auto; background:#fff; border-radius:12px; padding:2rem; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+        h1 { color:#333; margin-bottom:1.5rem; }
+        .form-group { margin-bottom:1rem; }
+        label { display:block; margin-bottom:0.5rem; font-weight:600; color:#444; }
+        input[type=text], input[type=number] { width:100%; padding:0.75rem; border:1px solid #ddd; border-radius:6px; font-size:1rem; box-sizing:border-box; }
+        button { background:#4ecdc4; color:#fff; border:none; padding:0.75rem 1.5rem; border-radius:6px; font-size:1rem; cursor:pointer; }
+        button:hover { background:#3ab8ad; }
+        .status { padding:1rem; border-radius:6px; margin-bottom:1rem; display:none; }
+        .status.success { background:#e8f5e9; color:#2e7d32; display:block; }
+        .status.error { background:#fdecea; color:#c62828; display:block; }
+        .info { background:#e3f2fd; padding:1rem; border-radius:6px; margin-bottom:1.5rem; font-size:0.9rem; color:#1565c0; }
+        .endpoint { font-family:monospace; background:#f5f5f5; padding:0.2rem 0.4rem; border-radius:4px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🎛️ IPTV HLS Proxy 控制面板</h1>
+    <div class="info">
+        <strong>代理地址：</strong> <span class="endpoint" id="proxyUrl"></span><br>
+        <strong>用法：</strong> <code>http://<host>:<port>/stream/<url编码的上游m3u8></code>
+    </div>
+    <div id="status" class="status"></div>
+    <form id="configForm">
+        <div class="form-group">
+            <label for="externalBaseUrl">EXTERNAL_BASE_URL (必填)</label>
+            <input type="text" id="externalBaseUrl" name="externalBaseUrl" placeholder="http://192.168.1.150:8830/stream" required>
+        </div>
+        <div class="form-group">
+            <label for="proxyPort">代理端口 PROXY_PORT</label>
+            <input type="number" id="proxyPort" name="proxyPort" value="8830" min="1" max="65535">
+        </div>
+        <button type="submit">保存配置并重启提示</button>
+    </form>
+    <hr style="margin:2rem 0;">
+    <h3>📊 运行状态</h3>
+    <pre id="stats" style="background:#fafafa;padding:1rem;border-radius:6px;overflow:auto;">加载中...</pre>
+</div>
+<script>
+    const proxyUrl = window.location.origin.replace(/:\d+$/, ':8830'); // fallback
+    document.getElementById('proxyUrl').textContent = proxyUrl + '/stream/...';
+
+    async function loadConfig() {
+        try {
+            const r = await fetch('/api/config');
+            const cfg = await r.json();
+            document.getElementById('externalBaseUrl').value = cfg.externalBaseUrl || '';
+            document.getElementById('proxyPort').value = cfg.port || 8830;
+        } catch(e) { console.error(e); }
+    }
+    async function loadStats() {
+        try {
+            const r = await fetch('/cache/stats');
+            const s = await r.json();
+            document.getElementById('stats').textContent = JSON.stringify(s, null, 2);
+        } catch(e) { document.getElementById('stats').textContent = '无法获取'; }
+    }
+    document.getElementById('configForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const status = document.getElementById('status');
+        status.className = 'status';
+        status.textContent = '';
+        const data = {
+            externalBaseUrl: document.getElementById('externalBaseUrl').value.trim(),
+            port: parseInt(document.getElementById('proxyPort').value, 10)
+        };
+        try {
+            const r = await fetch('/api/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const resp = await r.json();
+            if (r.ok) {
+                status.className = 'status success';
+                status.textContent = '✅ 配置已写入 .env 文件。请重启容器以生效（docker restart 容器名）。';
+            } else {
+                status.className = 'status error';
+                status.textContent = '❌ ' + (resp.error || '保存失败');
+            }
+        } catch(err) {
+            status.className = 'status error';
+            status.textContent = '❌ 请求失败: ' + err;
+        }
+    });
+    loadConfig();
+    loadStats();
+    setInterval(loadStats, 10000);
+</script>
+</body>
+</html>
+"""
+
+def write_env_file(external_base_url, port):
+    """Write .env file in project directory."""
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    with open(env_path, 'w') as f:
+        f.write(f'EXTERNAL_BASE_URL={external_base_url}\n')
+        f.write(f'PROXY_PORT={port}\n')
+    return env_path
+
 class IPTVProxyHandler(http.server.BaseHTTPRequestHandler):
     """HTTP handler for IPTV HLS stream proxying."""
     
@@ -200,12 +326,41 @@ class IPTVProxyHandler(http.server.BaseHTTPRequestHandler):
             self._handle_stream(upstream_url, head_only=True)
         else:
             self.send_error(404, "Not found")
+
+    def do_POST(self):
+        """Handle POST requests — config updates."""
+        import json
+        path = self.path
+        if path == '/api/config':
+            content_length = int(self.headers.get('Content-Length', 0))
+            raw = self.rfile.read(content_length).decode('utf-8')
+            try:
+                data = json.loads(raw)
+                external_base_url = data.get('externalBaseUrl', '').strip()
+                port = int(data.get('port', PORT))
+                if not external_base_url:
+                    self._send_json({'error': 'EXTERNAL_BASE_URL 不能为空'}, status=400)
+                    return
+                write_env_file(external_base_url, port)
+                self._send_json({'message': '配置已写入 .env，请重启容器生效'})
+            except Exception as e:
+                self._send_json({'error': str(e)}, status=400)
+        else:
+            self.send_error(404, "Not found")
     
     def do_GET(self):
         """Handle GET requests."""
         path = self.path
         
-        if path.startswith('/stream/'):
+        # Web UI routes
+        if path == '/' or path == '/index.html':
+            self._serve_ui()
+        elif path == '/api/config':
+            self._send_json({
+                'externalBaseUrl': EXTERNAL_BASE_URL,
+                'port': PORT
+            })
+        elif path.startswith('/stream/'):
             upstream_url = urllib.parse.unquote(path[len('/stream/'):])
             self._handle_stream(upstream_url, head_only=False)
         elif path == '/cache/stats':
@@ -215,6 +370,13 @@ class IPTVProxyHandler(http.server.BaseHTTPRequestHandler):
             })
         else:
             self.send_error(404, "Not found")
+
+    def _serve_ui(self):
+        """Serve the control panel HTML."""
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(UI_HTML.encode('utf-8'))
     
     def _handle_stream(self, upstream_url, head_only=False):
         """Proxy a stream request to the upstream source."""
@@ -303,10 +465,10 @@ class IPTVProxyHandler(http.server.BaseHTTPRequestHandler):
             logger.error(f"Stream error for {upstream_url[:60]}: {e}")
             self.send_error(502, "Bad Gateway")
     
-    def _send_json(self, data):
+    def _send_json(self, data, status=200):
         """Send a JSON response."""
         import json
-        self.send_response(200)
+        self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
